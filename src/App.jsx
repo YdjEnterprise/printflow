@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-//  PRINTFLOW — Full Job Management System (Supabase Edition)
+//  Artist Print Flow — Full Job Management System (Supabase Edition)
 // ═══════════════════════════════════════════════════════════════════
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { loadAll, syncTable, jobToDb, clientToDb, printToDb, fabToDb } from "./supabase.js";
@@ -299,7 +299,7 @@ function App(){
     <div style={{...S.root,alignItems:"center",justifyContent:"center"}}>
       <div style={{textAlign:"center"}}>
         <div style={{fontSize:32,marginBottom:12}}>⬡</div>
-        <div style={{fontSize:16,fontWeight:700,color:"#4f8ef7",marginBottom:6}}>PrintFlow</div>
+        <div style={{fontSize:16,fontWeight:700,color:"#4f8ef7",marginBottom:6}}>Artist Print Flow</div>
         <div style={{fontSize:12,color:"#607080"}}>Loading from database...</div>
       </div>
     </div>
@@ -348,7 +348,7 @@ function Sidebar({page,setPage,resetData,confirmReset,billingAlerts,paymentAlert
     <div style={S.sidebar}>
       <div style={S.brand}>
         <span style={{fontSize:24,color:"#4f8ef7"}}>⬡</span>
-        <div><div style={{fontSize:16,fontWeight:800,color:"#e0e8f5",letterSpacing:1}}>PrintFlow</div><div style={{fontSize:8,color:"#405060",letterSpacing:1}}>JOB MANAGER</div></div>
+        <div><div style={{fontSize:16,fontWeight:800,color:"#e0e8f5",letterSpacing:1}}>Artist Print Flow</div><div style={{fontSize:8,color:"#405060",letterSpacing:1}}>JOB MANAGER</div></div>
       </div>
       {nav.map(n=>(
         <button key={n.id} style={{...S.navBtn,...(page===n.id?S.navActive:{})}} onClick={()=>setPage(n.id)}>
@@ -1208,7 +1208,7 @@ function Reports({jobs,clients,fabJobs,printJobs}){
   const maxFabStage=Math.max(...byFabStage.map(x=>x.count),1);
 
   function exportReport(){
-    try{const rows=[["PrintFlow Report"],["Period: "+period],["Client: "+clientFilter],[""],["SUMMARY"],["Revenue",totalRev],["Collected",totalCollected],["Outstanding",totalDue],["Collection %",collRate+"%"],[""],["BY TYPE"],["Type","Jobs","Revenue"],...byType.map(x=>[x.type,x.count,x.rev]),[""],["CLIENTS"],["Client","Jobs","Revenue","Due"],...byClient.map(x=>[x.name,x.jobs,x.rev,x.due])];const text=rows.map(r=>r.join(",")).join("\n");const blob=new Blob([text],{type:"text/csv"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="report.csv";document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){}
+    try{const rows=[["Artist Print Flow Report"],["Period: "+period],["Client: "+clientFilter],[""],["SUMMARY"],["Revenue",totalRev],["Collected",totalCollected],["Outstanding",totalDue],["Collection %",collRate+"%"],[""],["BY TYPE"],["Type","Jobs","Revenue"],...byType.map(x=>[x.type,x.count,x.rev]),[""],["CLIENTS"],["Client","Jobs","Revenue","Due"],...byClient.map(x=>[x.name,x.jobs,x.rev,x.due])];const text=rows.map(r=>r.join(",")).join("\n");const blob=new Blob([text],{type:"text/csv"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="report.csv";document.body.appendChild(a);a.click();document.body.removeChild(a);}catch(e){}
   }
 
   const reportTabs=[{id:"overview",label:"📊 Overview"},{id:"product",label:"🏷 Product"},{id:"print",label:"🖨 Print Dept"},{id:"fab",label:"🔧 Fabrication"},{id:"client",label:"👤 Client View"}];
