@@ -39,7 +39,7 @@ const PRINT_STAGE_COLORS = {
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const WDAYS  = ["Su","Mo","Tu","We","Th","Fr","Sa"];
 
-const LOYALTY_GIFTS = [
+const DEFAULT_LOYALTY_GIFTS = [
   {points:500,  gift:"Free 10 Visiting Cards",icon:"🎁"},
   {points:1000, gift:"Free A3 Print (5 copies)",icon:"🖨"},
   {points:2500, gift:"Free Roll-up Standee",icon:"🎪"},
@@ -229,6 +229,7 @@ function App(){
   const[clients,setClients]     =useState([]);
   const[fabJobs,setFabJobs]     =useState([]);
   const[printJobs,setPrintJobs] =useState([]);
+  const[loyaltyGifts,setLoyaltyGifts]=useState(DEFAULT_LOYALTY_GIFTS);
   const[loading,setLoading]     =useState(true);
   const[toast,setToast]         =useState(null);
   const[billAlert,setBillAlert] =useState(null);
@@ -245,11 +246,17 @@ function App(){
 
   // Load from Supabase on mount
   useEffect(()=>{
-    loadAll().then(data=>{
+    loadAll().then(async (data)=>{
       setJobs(data.jobs); prevJobs.current=data.jobs;
       setClients(data.clients); prevClients.current=data.clients;
       setPrintJobs(data.printJobs); prevPrint.current=data.printJobs;
       setFabJobs(data.fabJobs); prevFab.current=data.fabJobs;
+      // Load loyalty gifts from settings
+      try{
+        const{loadSettings}=await import("./supabase.js");
+        const saved=await loadSettings("loyalty_gifts");
+        if(saved&&saved.length>0)setLoyaltyGifts(saved);
+      }catch(e){}
       setLoading(false);
       setTimeout(()=>{ syncReady.current=true; },500);
     }).catch(()=>{ setLoading(false); showToast("Failed to load data","error"); });
@@ -286,7 +293,7 @@ function App(){
   const billingAlerts =useMemo(()=>get30DayAlerts(clients,jobs),[clients,jobs]);
   const paymentAlerts =useMemo(()=>getPaymentAlerts(jobs,clients),[jobs,clients]);
 
-  const sharedProps={jobs,setJobs,clients,setClients,fabJobs,setFabJobs,printJobs,setPrintJobs,showToast,setPage,billingAlerts,paymentAlerts,setBillAlert};
+  const sharedProps={jobs,setJobs,clients,setClients,fabJobs,setFabJobs,printJobs,setPrintJobs,showToast,setPage,billingAlerts,paymentAlerts,setBillAlert,loyaltyGifts,setLoyaltyGifts};
 
   if(loading) return (
     <div style={{...S.root,alignItems:"center",justifyContent:"center"}}>
@@ -312,6 +319,7 @@ function App(){
         {page==="billing"     && <Billing       {...sharedProps}/>}
         {page==="payments"    && <Payments      {...sharedProps}/>}
         {page==="reports"     && <Reports       {...sharedProps}/>}
+        {page==="settings"    && <Settings      {...sharedProps}/>}
       </div>
       {billAlert&&<BillModal alert={billAlert} jobs={jobs} setJobs={setJobs} clients={clients} setClients={setClients} onClose={()=>setBillAlert(null)} showToast={showToast}/>}
       {toast&&<div style={{...S.toast,background:toast.type==="error"?"#ff3b3b":"#27c27c"}}>{toast.msg}</div>}
@@ -334,6 +342,7 @@ function Sidebar({page,setPage,resetData,confirmReset,billingAlerts,paymentAlert
     {id:"billing",    icon:"₹", label:"Billing",      badge:billingAlerts.length},
     {id:"payments",   icon:"💳",label:"Payments",     badge:paymentAlerts.filter(x=>x.payLevel==="red").length},
     {id:"reports",    icon:"📊",label:"Reports"},
+    {id:"settings",   icon:"⚙",label:"Settings"},
   ];
   return(
     <div style={S.sidebar}>
@@ -361,7 +370,7 @@ function Sidebar({page,setPage,resetData,confirmReset,billingAlerts,paymentAlert
 
 // ── TopBar ─────────────────────────────────────────────────────────
 function TopBar({page}){
-  const titles={dashboard:"Dashboard",add:"Add New Job",pending:"Pending Jobs",print:"Print Department",fabrication:"Fabrication Department",clients:"Client Database",billing:"Billing",payments:"Payment Tracker",reports:"Reports & Analytics"};
+  const titles={dashboard:"Dashboard",add:"Add New Job",pending:"Pending Jobs",print:"Print Department",fabrication:"Fabrication Department",clients:"Client Database",billing:"Billing",payments:"Payment Tracker",reports:"Reports & Analytics",settings:"Settings"};
   return(
     <div style={S.topBar}>
       <span style={{fontSize:17,fontWeight:700,color:"#e0e8f5"}}>{titles[page]}</span>
@@ -685,6 +694,7 @@ function PendingJobs({jobs,setJobs,showToast}){
   function markDelivered(orderId){setJobs(prev=>prev.map(j=>j.orderId===orderId?{...j,stage:"Delivered",deliveredAt:new Date().toISOString().slice(0,10)}:j));showToast("Delivered ✓");}
   function updateStage(orderId,stage){setJobs(prev=>prev.map(j=>j.orderId===orderId?{...j,stage,...(stage==="Delivered"&&!j.deliveredAt?{deliveredAt:new Date().toISOString().slice(0,10)}:{})}:j));showToast("Stage updated");}
   function updatePaid(orderId,paid){setJobs(prev=>prev.map(j=>j.orderId===orderId?{...j,paid:parseFloat(paid)||0}:j));showToast("Payment updated");}
+  function updateDeadline(orderId,dl){setJobs(prev=>prev.map(j=>j.orderId===orderId?{...j,deadline:dl,urgency:autoUrgency(dl)}:j));showToast("Deadline updated");}
   return(
     <div style={S.content}>
       <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
@@ -700,7 +710,7 @@ function PendingJobs({jobs,setJobs,showToast}){
         <div key={sec.label} style={{...S.card,borderLeft:`4px solid ${sec.border}`,marginBottom:16}}>
           <h3 style={{...S.cardTitle,color:sec.border}}>{sec.label}</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:9}}>
-            {sec.list.map(j=><PCard key={j.orderId} job={j} border={sec.border} expanded={expandedId===j.orderId} setExpanded={setExpandedId} markDelivered={markDelivered} updateStage={updateStage} updatePaid={updatePaid}/>)}
+            {sec.list.map(j=><PCard key={j.orderId} job={j} border={sec.border} expanded={expandedId===j.orderId} setExpanded={setExpandedId} markDelivered={markDelivered} updateStage={updateStage} updatePaid={updatePaid} updateDeadline={updateDeadline}/>)}
           </div>
         </div>
       ))}
@@ -709,7 +719,7 @@ function PendingJobs({jobs,setJobs,showToast}){
   );
 }
 
-function PCard({job,border,expanded,setExpanded,markDelivered,updateStage,updatePaid}){
+function PCard({job,border,expanded,setExpanded,markDelivered,updateStage,updatePaid,updateDeadline}){
   const days=daysUntil(job.deadline),due=job.amount-job.paid,imgs=job.images||[];
   return(
     <div style={{background:"#0d1520",borderRadius:9,padding:11,border:"1px solid #1a2535",borderTop:`3px solid ${border}`}}>
@@ -736,6 +746,7 @@ function PCard({job,border,expanded,setExpanded,markDelivered,updateStage,update
         <div style={{marginTop:9,paddingTop:9,borderTop:"1px solid #1a2535"}}>
           {imgs.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:7}}>{imgs.map(img=><img key={img.id} src={img.data} alt="" style={{width:60,height:60,borderRadius:6,objectFit:"cover",border:"1px solid #2a3545"}}/>)}</div>}
           {job.notes&&<div style={{fontSize:10,color:"#607080",marginBottom:6,fontStyle:"italic"}}>📝 {job.notes}</div>}
+          <div style={{marginBottom:5}}><label style={{...S.label,marginBottom:2,display:"block"}}>Deadline</label><DatePicker value={job.deadline} onChange={v=>updateDeadline(job.orderId,v)}/></div>
           <div style={{marginBottom:5}}><label style={{...S.label,marginBottom:2,display:"block"}}>Stage</label><select value={job.stage} onChange={e=>updateStage(job.orderId,e.target.value)} style={{...S.miniSelect,width:"100%",padding:"6px 9px"}}>{STAGES.map(s=><option key={s}>{s}</option>)}</select></div>
           <div style={{marginBottom:7}}><label style={{...S.label,marginBottom:2,display:"block"}}>Paid ₹ · Total ₹{job.amount.toLocaleString()}</label><input type="number" style={{...S.input,padding:"6px 9px"}} defaultValue={job.paid} onBlur={e=>updatePaid(job.orderId,e.target.value)}/></div>
           {job.stage!=="Delivered"&&<button style={{width:"100%",background:"#27c27c22",color:"#27c27c",border:"1px solid #27c27c55",borderRadius:5,padding:"7px",fontSize:11,cursor:"pointer",fontWeight:700}} onClick={()=>markDelivered(job.orderId)}>✓ Mark Delivered</button>}
@@ -912,7 +923,7 @@ function FabDept({fabJobs,setFabJobs,jobs,showToast}){
 }
 
 // ── Clients ────────────────────────────────────────────────────────
-function Clients({clients,setClients,jobs,showToast,setBillAlert,billingAlerts}){
+function Clients({clients,setClients,jobs,showToast,setBillAlert,billingAlerts,loyaltyGifts}){
   const[search,setSearch]=useState("");
   const[sel,setSel]=useState(null);
   const[editMode,setEditMode]=useState(false);
@@ -939,8 +950,8 @@ function Clients({clients,setClients,jobs,showToast,setBillAlert,billingAlerts})
   const selAlert=sel?billingAlerts.find(a=>a.client.custId===sel.custId):null;
   const loyalty=sel?getLoyaltyTier(totalBiz):null;
   const loyaltyPoints=sel?(sel.loyaltyPoints||0):0;
-  const lastGift=LOYALTY_GIFTS.filter(g=>g.points<=loyaltyPoints).pop()||null;
-  const nextGift=LOYALTY_GIFTS.filter(g=>g.points>loyaltyPoints)[0]||null;
+  const lastGift=loyaltyGifts.filter(g=>g.points<=loyaltyPoints).pop()||null;
+  const nextGift=loyaltyGifts.filter(g=>g.points>loyaltyPoints)[0]||null;
 
   return(
     <div style={{...S.content,display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -1024,7 +1035,7 @@ function Clients({clients,setClients,jobs,showToast,setBillAlert,billingAlerts})
                   </div>
                   <div style={{marginBottom:12}}>
                     <div style={{fontSize:10,color:"#607080",fontWeight:700,textTransform:"uppercase",marginBottom:5}}>Rewards Chart</div>
-                    {LOYALTY_GIFTS.map(g=>{const earned=loyaltyPoints>=g.points;return <div key={g.points} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 7px",borderRadius:5,background:earned?"#0a1f0a":"transparent",marginBottom:2}}><span style={{fontSize:12}}>{earned?"✅":"⬜"}</span><span style={{fontSize:11,color:earned?"#27c27c":"#607080",flex:1}}>{g.gift}</span><span style={{fontSize:10,color:earned?"#27c27c":"#405060",fontWeight:700}}>{g.points.toLocaleString()}</span></div>;})}
+                    {loyaltyGifts.map(g=>{const earned=loyaltyPoints>=g.points;return <div key={g.points} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 7px",borderRadius:5,background:earned?"#0a1f0a":"transparent",marginBottom:2}}><span style={{fontSize:12}}>{earned?"✅":"⬜"}</span><span style={{fontSize:11,color:earned?"#27c27c":"#607080",flex:1}}>{g.gift}</span><span style={{fontSize:10,color:earned?"#27c27c":"#405060",fontWeight:700}}>{g.points.toLocaleString()}</span></div>;})}
                   </div>
                 </>
               ):(
@@ -1338,6 +1349,89 @@ function Reports({jobs,clients,fabJobs,printJobs}){
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ── Settings ──────────────────────────────────────────────────────
+function Settings({loyaltyGifts,setLoyaltyGifts,showToast}){
+  const[gifts,setGifts]=useState(()=>loyaltyGifts.map(g=>({...g})));
+  const[saving,setSaving]=useState(false);
+  const icons=["🎁","🖨","🎪","🏳","💸","💡","🎯","🏆","⭐","💎","🎉","🛍"];
+
+  const updateGift=(idx,field,val)=>{
+    setGifts(prev=>prev.map((g,i)=>i===idx?{...g,[field]:field==="points"?parseInt(val)||0:val}:g));
+  };
+  const addGift=()=>{
+    setGifts(prev=>[...prev,{points:0,gift:"",icon:"🎁"}].sort((a,b)=>a.points-b.points));
+  };
+  const removeGift=(idx)=>{
+    if(gifts.length<=1) return;
+    setGifts(prev=>prev.filter((_,i)=>i!==idx));
+  };
+  const saveGifts=async ()=>{
+    const sorted=[...gifts].filter(g=>g.points>0&&g.gift).sort((a,b)=>a.points-b.points);
+    if(sorted.length===0){showToast("Add at least one reward","error"); return;}
+    setSaving(true);
+    try{
+      const{saveSettings}=await import("./supabase.js");
+      await saveSettings("loyalty_gifts",sorted);
+      setLoyaltyGifts(sorted);
+      setGifts(sorted.map(g=>({...g})));
+      showToast("Rewards saved!");
+    }catch(e){showToast("Save failed","error");}
+    setSaving(false);
+  };
+  const resetDefaults=()=>{
+    setGifts(DEFAULT_LOYALTY_GIFTS.map(g=>({...g})));
+    showToast("Reset to defaults — click Save to apply");
+  };
+
+  return (
+    <div style={S.content}>
+      <div style={S.card}>
+        <h3 style={S.cardTitle}>🎁 Loyalty Rewards Editor</h3>
+        <div style={{fontSize:11,color:"#607080",marginBottom:14}}>Configure what gifts clients receive at each points threshold. Changes apply to all client profiles.</div>
+        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+          <button onClick={addGift} style={{...S.submitBtn,background:"#1a2a3e",color:"#4f8ef7",border:"1px solid #4f8ef744",padding:"7px 14px",fontSize:11}}>+ Add Reward Tier</button>
+          <button onClick={resetDefaults} style={{...S.submitBtn,background:"none",border:"1px solid #2a3545",color:"#607080",padding:"7px 14px",fontSize:11}}>↺ Reset Defaults</button>
+        </div>
+        {gifts.map((g,idx)=> (
+          <div key={idx} style={{display:"flex",gap:8,alignItems:"center",padding:"10px 12px",background:"#0d1520",borderRadius:8,marginBottom:6,border:"1px solid #1a2535",flexWrap:"wrap"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:60}}>
+              <label style={{fontSize:8,color:"#607080",fontWeight:700,textTransform:"uppercase"}}>Points</label>
+              <input type="number" value={g.points} onChange={e=>updateGift(idx,"points",e.target.value)} style={{...S.input,width:80,padding:"5px 8px",fontSize:12,textAlign:"center"}}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:3,flex:1,minWidth:140}}>
+              <label style={{fontSize:8,color:"#607080",fontWeight:700,textTransform:"uppercase"}}>Gift / Reward</label>
+              <input value={g.gift} onChange={e=>updateGift(idx,"gift",e.target.value)} placeholder="e.g. Free 10 Visiting Cards" style={{...S.input,padding:"5px 8px",fontSize:12}}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:50}}>
+              <label style={{fontSize:8,color:"#607080",fontWeight:700,textTransform:"uppercase"}}>Icon</label>
+              <select value={g.icon} onChange={e=>updateGift(idx,"icon",e.target.value)} style={{...S.input,padding:"5px 4px",fontSize:14,textAlign:"center",width:50}}>
+                {icons.map(ic=> <option key={ic} value={ic}>{ic}</option>)}
+              </select>
+            </div>
+            <button onClick={()=>removeGift(idx)} style={{background:"none",border:"1px solid #ff3b3b44",color:"#ff3b3b",borderRadius:5,padding:"4px 8px",cursor:"pointer",fontSize:10,marginTop:14,flexShrink:0}}>✕</button>
+          </div>
+        ))}
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          <button onClick={saveGifts} disabled={saving} style={{...S.submitBtn,opacity:saving?0.6:1}}>{saving?"Saving...":"💾 Save Rewards"}</button>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <h3 style={S.cardTitle}>📋 Preview</h3>
+        <div style={{fontSize:11,color:"#607080",marginBottom:10}}>This is how the rewards chart will appear on client profiles:</div>
+        {gifts.filter(g=>g.points>0&&g.gift).sort((a,b)=>a.points-b.points).map(g=> (
+          <div key={g.points} style={{display:"flex",alignItems:"center",gap:7,padding:"6px 9px",borderRadius:5,background:"#0d1520",marginBottom:3}}>
+            <span style={{fontSize:14}}>{g.icon}</span>
+            <span style={{fontSize:11,color:"#c8d8e8",flex:1}}>{g.gift}</span>
+            <span style={{fontSize:10,color:"#4f8ef7",fontWeight:700}}>{g.points.toLocaleString()} pts</span>
+          </div>
+        ))}
+        {gifts.filter(g=>g.points>0&&g.gift).length===0&&<div style={{color:"#405060",fontSize:12}}>No valid rewards — add points and gift names above</div>}
+      </div>
     </div>
   );
 }
