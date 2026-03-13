@@ -79,3 +79,17 @@ export async function syncTable(table, prev, next, keyField, dbKeyField, toDb) {
     }
   }
 }
+
+// ── Settings (key-value store) ────────────────────────────────────
+
+export async function loadSettings(key) {
+  try {
+    const { data } = await supabase.from("settings").select("value").eq("key", key).single();
+    if (data && data.value) return data.value;
+  } catch (e) {}
+  return null;
+}
+
+export async function saveSettings(key, value) {
+  await supabase.from("settings").upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+}
